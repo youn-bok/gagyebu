@@ -66,9 +66,14 @@ header{
 .month-nav button:active{background:var(--line-soft);}
 .month-label{font-family:'Noto Serif KR',serif;font-size:16px;font-weight:600;min-width:110px;text-align:center;}
 
+.carry-bar{
+  margin:14px 18px 0;text-align:center;font-size:12px;color:var(--ink-soft);
+}
+.carry-bar b{color:var(--credit);font-size:13px;}
+.carry-bar b.neg{color:var(--stamp);}
 .summary{
   display:grid;grid-template-columns:1fr 1fr 1fr;
-  margin:14px 18px 0;background:var(--paper-card);
+  margin:10px 18px 0;background:var(--paper-card);
   border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
 }
 .summary .cell{padding:12px 8px;text-align:center;border-right:1px solid var(--line-soft);}
@@ -248,6 +253,12 @@ function monthExpenses(){
   const prefix = `${ui.year}-${pad(ui.month)}`;
   return state.expenses.filter(t=>t.date.startsWith(prefix));
 }
+function balanceBefore(year, month){
+  const cutoff = `${year}-${pad(month)}-01`;
+  const incBefore = state.income.filter(t=>t.date < cutoff).reduce((s,t)=>s+t.amount,0);
+  const expBefore = state.expenses.filter(t=>t.date < cutoff).reduce((s,t)=>s+t.amount,0);
+  return incBefore - expBefore;
+}
 
 function render(){
   const app = document.getElementById('app');
@@ -255,7 +266,8 @@ function render(){
   const exp = monthExpenses();
   const totalIncome = inc.reduce((s,t)=>s+t.amount,0);
   const totalExpense = exp.reduce((s,t)=>s+t.amount,0);
-  const balance = totalIncome - totalExpense;
+  const carryIn = balanceBefore(ui.year, ui.month);
+  const balance = carryIn + totalIncome - totalExpense;
 
   const familyTotal = exp.filter(e=>FAMILY_SET.includes(e.category)).reduce((s,t)=>s+t.amount,0);
   const personalTotal = exp.filter(e=>PERSONAL_SET.includes(e.category)).reduce((s,t)=>s+t.amount,0);
@@ -313,6 +325,7 @@ function render(){
         <button id="nextMonth">›</button>
       </div>
     </header>
+    <div class="carry-bar">전월 이월 <b class="${carryIn<0?'neg':''}">${formatWon(carryIn)}</b></div>
     <div class="summary">
       <div class="cell"><div class="label">수입</div><div class="value credit">${formatWon(totalIncome)}</div></div>
       <div class="cell"><div class="label">지출</div><div class="value debit">${formatWon(totalExpense)}</div></div>
@@ -492,24 +505,54 @@ function exportToExcel(){
   if(typeof XLSX === 'undefined'){ showToast('엑셀 모듈을 불러오지 못했어요. 인터넷 연결을 확인해주세요.'); return; }
   const year = ui.year, month = ui.month;
   const days = daysInMonth(year, month);
-  const lastRow = 9 + days; // 1-indexed spreadsheet row of the last day
+
+  const inc = monthIncome();
+  const exp = monthExpenses();
+  const totalIncome = inc.reduce((s,t)=>s+t.amount,0);
+  const carryIn = balanceBefore(year, month);
+
+  // group expenses by day -> by category -> ordered list of entries (no aggregation)
+  const byDay = {};
+  exp.forEach(e=>{
+    const dt = new Date(e.date+'T00:00:00');
+    const day = dt.getDate();
+    byDay[day] = byDay[day] || {};
+    byDay[day][e.category] = byDay[day][e.category] || [];
+    byDay[day][e.category].push({ item:e.item, amount:e.amount });
+  });
+
+  // each day needs as many rows as its busiest category that day (min 1)
+  const daySlots = {};
+  let totalDataRows = 0;
+  for(let d=1; d<=days; d++){
+    let maxSlots = 1;
+    const cats = byDay[d];
+    if(cats){
+      CATEGORIES.forEach(c=>{
+        const list = cats[c.name];
+        if(list && list.length > maxSlots) maxSlots = list.length;
+      });
+    }
+    daySlots[d] = maxSlots;
+    totalDataRows += maxSlots;
+  }
+
+  const lastRow = 9 + totalDataRows; // 1-indexed spreadsheet row of the last data row
   const totalRows = lastRow;
   const totalCols = 17; // A..Q
 
   const aoa = [];
   for(let r=0;r<totalRows;r++) aoa.push(new Array(totalCols).fill(null));
 
-  const inc = monthIncome();
-  const exp = monthExpenses();
-  const totalIncome = inc.reduce((s,t)=>s+t.amount,0);
-
   // row3 (idx2): labels
   aoa[2][0] = '수입';
   aoa[2][2] = '지출';
   aoa[2][4] = '잔액';
-  // row4 (idx3): income total input cell
+  // row4 (idx3): this month's income total
   aoa[3][0] = totalIncome;
-  // row6 (idx5): family/personal labels
+  // row5 (idx4): carry-in label, row6 (idx5): carry-in value + family/personal labels
+  aoa[4][0] = '전월 이월';
+  aoa[5][0] = carryIn;
   aoa[5][1] = '가족 사용';
   aoa[5][9] = '개인 사용';
   // row9 (idx8): headers
@@ -518,27 +561,32 @@ function exportToExcel(){
     aoa[8][colLetterToIndex(c.itemCol)] = c.name;
     aoa[8][colLetterToIndex(c.amtCol)] = '금액';
   });
-  // date column
+
+  // lay out date column + remember each day's starting row
+  let cursor = 9; // 0-indexed row for spreadsheet row10
+  const dayStartRow = {};
   for(let d=1; d<=days; d++){
-    aoa[9+d-1][0] = new Date(year, month-1, d);
+    dayStartRow[d] = cursor;
+    for(let s=0; s<daySlots[d]; s++){
+      aoa[cursor+s][0] = new Date(year, month-1, d);
+    }
+    cursor += daySlots[d];
   }
-  // expense entries -> aggregate by date+category (original has one cell per day per category)
-  const cellMap = {}; // key: rowIdx-catName -> {items:[], amount:0}
-  exp.forEach(e=>{
-    const dt = new Date(e.date+'T00:00:00');
-    const dayNum = dt.getDate();
-    const rowIdx = 9 + dayNum - 1;
-    const key = rowIdx+'-'+e.category;
-    if(!cellMap[key]) cellMap[key] = { items:[], amount:0, rowIdx, category:e.category };
-    cellMap[key].items.push(e.item);
-    cellMap[key].amount += e.amount;
-  });
-  Object.values(cellMap).forEach(c=>{
-    const catDef = CATEGORIES.find(x=>x.name===c.category);
-    if(!catDef) return;
-    aoa[c.rowIdx][colLetterToIndex(catDef.itemCol)] = c.items.join(', ');
-    aoa[c.rowIdx][colLetterToIndex(catDef.amtCol)] = c.amount;
-  });
+
+  // place every transaction in its own cell/row (no merging or summing)
+  for(let d=1; d<=days; d++){
+    const cats = byDay[d];
+    if(!cats) continue;
+    CATEGORIES.forEach(c=>{
+      const list = cats[c.name];
+      if(!list) return;
+      list.forEach((entry, idx)=>{
+        const r = dayStartRow[d] + idx;
+        aoa[r][colLetterToIndex(c.itemCol)] = entry.item;
+        aoa[r][colLetterToIndex(c.amtCol)] = entry.amount;
+      });
+    });
+  }
 
   const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates:true });
 
