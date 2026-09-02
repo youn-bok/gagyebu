@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>가계부</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#03C75A">
+<meta name="theme-color" content="#172945">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -213,21 +213,21 @@ header{
 <script>
 const STORAGE_KEY = 'ledger-form-data';
 
-// exact category order/columns matching the user's original template
+// display order per user request; spreadsheet columns stay attached to each category regardless of order
 const CATEGORIES = [
   { name:'가족식비',   itemCol:'B', amtCol:'C' },
   { name:'외식',       itemCol:'D', amtCol:'E' },
   { name:'생활용품',   itemCol:'F', amtCol:'G' },
   { name:'달이/별이',  itemCol:'H', amtCol:'I' },
-  { name:'커피/용돈',  itemCol:'J', amtCol:'K' },
-  { name:'교통비',     itemCol:'L', amtCol:'M' },
-  { name:'취미',       itemCol:'N', amtCol:'O' },
-  { name:'월세/공과금', itemCol:'P', amtCol:'Q' },
+  { name:'패션/미용',  itemCol:'T', amtCol:'U' },
   { name:'건강',       itemCol:'R', amtCol:'S' },
-  { name:'피복/의복',  itemCol:'T', amtCol:'U' },
+  { name:'커피/용돈',  itemCol:'J', amtCol:'K' },
+  { name:'취미',       itemCol:'N', amtCol:'O' },
+  { name:'교통비',     itemCol:'L', amtCol:'M' },
+  { name:'월세/공과금', itemCol:'P', amtCol:'Q' },
   { name:'기타',       itemCol:'V', amtCol:'W' },
 ];
-const FAMILY_SET = ['가족식비','외식','생활용품','달이/별이','건강','피복/의복','기타'];
+const FAMILY_SET = ['가족식비','외식','생활용품','달이/별이','건강','패션/미용','기타'];
 const PERSONAL_SET = ['커피/용돈','교통비','취미'];
 
 let state = null; // { income:[{id,date,source,amount,createdAt}], expenses:[{id,date,category,item,amount,createdAt}] }
@@ -310,7 +310,7 @@ function render(){
 
   let listHtml = '';
   if(Object.keys(groups).length===0){
-    listHtml = `<div class="empty"><div class="seal">記</div><p>이번 달 기록이 아직 없어요.<br>오른쪽 아래 도장을 눌러 첫 기록을 남겨보세요.</p></div>`;
+    listHtml = `<div class="empty"><div class="seal">${emptySealSvg()}</div><p>이번 달 기록이 아직 없어요.<br>오른쪽 아래 도장을 눌러 첫 기록을 남겨보세요.</p></div>`;
   } else {
     listHtml = Object.keys(groups).sort((a,b)=>b.localeCompare(a)).map(date=>{
       const d = new Date(date+'T00:00:00');
@@ -394,6 +394,22 @@ function changeMonth(delta){
 }
 function downloadSvg(){
   return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>`;
+}
+function emptySealSvg(){
+  return `<svg width="30" height="30" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+    <g transform="rotate(-40 16 16)">
+      <rect x="2" y="13" width="4.5" height="6" rx="1.6" fill="#B23A2E"/>
+      <rect x="2" y="13" width="4.5" height="2.1" rx="1" fill="#C9584C"/>
+      <rect x="6.5" y="13" width="2.6" height="6" fill="#D9CEB2"/>
+      <line x1="7.4" y1="13" x2="7.4" y2="19" stroke="#8B8272" stroke-width="0.5"/>
+      <rect x="9.1" y="13" width="14.4" height="6" fill="#D9A652"/>
+      <rect x="9.1" y="13" width="14.4" height="1.7" fill="#E4BD78"/>
+      <line x1="9.1" y1="16" x2="23.5" y2="16" stroke="#B9812F" stroke-width="0.4"/>
+      <polygon points="23.5,13 23.5,19 29.5,16" fill="#E4BD78"/>
+      <polygon points="27.2,14.35 27.2,17.65 29.5,16" fill="#2B2823"/>
+      <polygon points="27.2,14.35 27.2,15.35 28.3,16" fill="#4A453D"/>
+    </g>
+  </svg>`;
 }
 function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s); }
@@ -641,6 +657,12 @@ function exportToExcel(){
 /* ---------- init ---------- */
 (async function init(){
   state = await loadData();
+  // one-time migration: category renamed 피복/의복 -> 패션/미용
+  let migrated = false;
+  state.expenses.forEach(e=>{
+    if(e.category==='피복/의복'){ e.category='패션/미용'; migrated = true; }
+  });
+  if(migrated) await saveData();
   const now = new Date();
   ui.year = now.getFullYear();
   ui.month = now.getMonth()+1;
