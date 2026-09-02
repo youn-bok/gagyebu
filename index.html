@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>가계부</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#B23A2E">
+<meta name="theme-color" content="#03C75A">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -93,6 +93,19 @@ header{
 .breakdown .box .t{font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;}
 .breakdown .box .v{font-size:14px;font-weight:700;color:var(--ink);}
 .breakdown .box .p{font-size:11px;color:var(--gold);margin-left:4px;font-weight:600;}
+
+.cat-totals{
+  margin:10px 18px 0;background:var(--paper-card);
+  border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+}
+.cat-totals-title{font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;}
+.cat-totals-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px;}
+.cat-total-item{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:6px 0;border-bottom:1px dashed var(--line-soft);font-size:12.5px;
+}
+.cat-total-item .name{color:var(--ink-soft);}
+.cat-total-item .amt{color:var(--ink);font-weight:600;font-feature-settings:"tnum" 1;}
 
 .chips{display:flex;gap:8px;overflow-x:auto;padding:14px 18px 4px;scrollbar-width:none;}
 .chips::-webkit-scrollbar{display:none;}
@@ -210,8 +223,11 @@ const CATEGORIES = [
   { name:'교통비',     itemCol:'L', amtCol:'M' },
   { name:'취미',       itemCol:'N', amtCol:'O' },
   { name:'월세/공과금', itemCol:'P', amtCol:'Q' },
+  { name:'건강',       itemCol:'R', amtCol:'S' },
+  { name:'피복/의복',  itemCol:'T', amtCol:'U' },
+  { name:'기타',       itemCol:'V', amtCol:'W' },
 ];
-const FAMILY_SET = ['가족식비','외식','생활용품','달이/별이'];
+const FAMILY_SET = ['가족식비','외식','생활용품','달이/별이','건강','피복/의복','기타'];
 const PERSONAL_SET = ['커피/용돈','교통비','취미'];
 
 let state = null; // { income:[{id,date,source,amount,createdAt}], expenses:[{id,date,category,item,amount,createdAt}] }
@@ -273,6 +289,10 @@ function render(){
   const personalTotal = exp.filter(e=>PERSONAL_SET.includes(e.category)).reduce((s,t)=>s+t.amount,0);
   const familyPct = totalExpense ? (familyTotal/totalExpense*100).toFixed(1) : '0.0';
   const personalPct = totalExpense ? (personalTotal/totalExpense*100).toFixed(1) : '0.0';
+  const categoryTotals = CATEGORIES.map(c=>({
+    name: c.name,
+    total: exp.filter(e=>e.category===c.name).reduce((s,t)=>s+t.amount,0)
+  }));
 
   const filtered = ui.filterCat==='all' ? [...inc.map(t=>({...t,_kind:'income'})), ...exp.map(t=>({...t,_kind:'expense'}))]
     : ui.filterCat==='income' ? inc.map(t=>({...t,_kind:'income'}))
@@ -334,6 +354,12 @@ function render(){
     <div class="breakdown">
       <div class="box"><div class="t">가족 사용</div><div class="v">${formatWon(familyTotal)}<span class="p">${familyPct}%</span></div></div>
       <div class="box"><div class="t">개인 사용</div><div class="v">${formatWon(personalTotal)}<span class="p">${personalPct}%</span></div></div>
+    </div>
+    <div class="cat-totals">
+      <div class="cat-totals-title">카테고리별 합계</div>
+      <div class="cat-totals-grid">
+        ${categoryTotals.map(c=>`<div class="cat-total-item"><span class="name">${escapeHtml(c.name)}</span><span class="amt">${formatWon(c.total)}</span></div>`).join('')}
+      </div>
     </div>
     <div class="chips">${chipsHtml}</div>
     <div class="list">${listHtml}</div>
@@ -420,7 +446,7 @@ function openEntryModal(tx, forcedKind){
     } else {
       wrap.innerHTML = `
         <div class="field"><label>구분</label><select id="fCategory">${catOptions}</select></div>
-        <div class="field"><label>항목</label><input type="text" id="fItem" placeholder="예: 왕타칫솔, 택시" value="${tx&&tx.item?escapeAttr(tx.item):''}"></div>
+        <div class="field"><label>항목</label><input type="text" id="fItem" placeholder="항목을 입력하세요" value="${tx&&tx.item?escapeAttr(tx.item):''}"></div>
       `;
     }
   }
@@ -539,7 +565,7 @@ function exportToExcel(){
 
   const lastRow = 9 + totalDataRows; // 1-indexed spreadsheet row of the last data row
   const totalRows = lastRow;
-  const totalCols = 17; // A..Q
+  const totalCols = 23; // A..W (11 categories x 2 cols + date col)
 
   const aoa = [];
   for(let r=0;r<totalRows;r++) aoa.push(new Array(totalCols).fill(null));
@@ -593,17 +619,17 @@ function exportToExcel(){
   // formulas
   const setF = (addr, f) => { ws[addr] = { t:'n', f }; };
   setF('B3', 'A4+A6');
-  setF('D3', 'SUM(B8:Q8)');
+  setF('D3', 'SUM(B8:W8)');
   setF('F3', 'B3-D3');
-  setF('C6', 'C8+E8+G8+I8');
+  setF('C6', 'C8+E8+G8+I8+S8+U8+W8');
   setF('D6', 'C6/$D$3');
   setF('K6', 'K8+M8+O8');
   setF('L6', 'K6/$D$3');
-  ['C','E','G','I','K','M','O','Q'].forEach(col=>{
+  ['C','E','G','I','K','M','O','Q','S','U','W'].forEach(col=>{
     setF(col+'8', `SUBTOTAL(9,${col}10:${col}${lastRow})`);
   });
 
-  ws['!cols'] = [{wch:12}].concat(Array(16).fill({wch:10}));
+  ws['!cols'] = [{wch:12}].concat(Array(22).fill({wch:10}));
   ws['!ref'] = XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r: totalRows-1, c: totalCols-1} });
 
   const wb = XLSX.utils.book_new();
