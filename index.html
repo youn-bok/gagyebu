@@ -95,10 +95,25 @@ header{
 }
 .breakdown .box{
   background:var(--paper-card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;
+  cursor:pointer;
 }
+.breakdown .box:active{background:var(--line-soft);}
 .breakdown .box .t{font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;}
 .breakdown .box .v{font-size:14px;font-weight:700;color:var(--ink);}
 .breakdown .box .p{font-size:11px;color:var(--gold);margin-left:4px;font-weight:600;}
+
+.breakdown-list{margin-bottom:10px;}
+.breakdown-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:9px 0;border-bottom:1px dashed var(--line-soft);font-size:14px;
+}
+.breakdown-row .name{color:var(--ink-soft);}
+.breakdown-row .amt{color:var(--ink);font-weight:600;font-feature-settings:"tnum" 1;}
+.breakdown-total-row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 0 4px;font-size:15px;font-weight:700;color:var(--ink);
+  border-top:1px solid var(--line);margin-top:2px;font-feature-settings:"tnum" 1;
+}
 
 .cat-totals{
   margin:10px 18px 0;background:var(--paper-card);
@@ -373,8 +388,8 @@ function render(){
       <div class="cell"><div class="label">잔액</div><div class="value">${formatWon(balance)}</div></div>
     </div>
     <div class="breakdown">
-      <div class="box"><div class="t">가족 사용</div><div class="v">${formatWon(familyTotal)}<span class="p">${familyPct}%</span></div></div>
-      <div class="box"><div class="t">개인 사용</div><div class="v">${formatWon(personalTotal)}<span class="p">${personalPct}%</span></div></div>
+      <div class="box" data-group="family"><div class="t">가족 사용</div><div class="v">${formatWon(familyTotal)}<span class="p">${familyPct}%</span></div></div>
+      <div class="box" data-group="personal"><div class="t">개인 사용</div><div class="v">${formatWon(personalTotal)}<span class="p">${personalPct}%</span></div></div>
     </div>
     <div class="cat-totals">
       <div class="cat-totals-title">카테고리별 합계</div>
@@ -394,6 +409,9 @@ function render(){
   document.getElementById('fabAdd').onclick = ()=>openEntryModal(null);
   document.getElementById('exportBtn').onclick = exportToExcel;
   document.getElementById('syncBtn').onclick = openSyncModal;
+  document.querySelectorAll('.breakdown .box').forEach(b=>{
+    b.onclick = ()=> openGroupBreakdown(b.dataset.group);
+  });
   document.querySelectorAll('.chip').forEach(c=>{ c.onclick = ()=>{ ui.filterCat = c.dataset.cat; render(); }; });
   document.querySelectorAll('.row').forEach(r=>{
     r.onclick = ()=>{
@@ -680,6 +698,33 @@ function exportToExcel(){
 }
 
 /* ---------- backup / multi-device sync ---------- */
+function openGroupBreakdown(group){
+  const set = group==='family' ? FAMILY_SET : PERSONAL_SET;
+  const title = group==='family' ? '가족 사용 내역' : '개인 사용 내역';
+  const exp = monthExpenses();
+  const items = CATEGORIES.filter(c=>set.includes(c.name)).map(c=>({
+    name: c.name,
+    total: exp.filter(e=>e.category===c.name).reduce((s,t)=>s+t.amount,0)
+  }));
+  const total = items.reduce((s,i)=>s+i.total,0);
+  const overlay = document.getElementById('overlay');
+  overlay.innerHTML = `
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>${title}</h2>
+        <button class="close-btn" id="closeBreakdownSheet">✕</button>
+      </div>
+      <div class="breakdown-list">
+        ${items.map(i=>`<div class="breakdown-row"><span class="name">${escapeHtml(i.name)}</span><span class="amt">${formatWon(i.total)}</span></div>`).join('')}
+      </div>
+      <div class="breakdown-total-row"><span>합계</span><span>${formatWon(total)}</span></div>
+    </div>
+  `;
+  overlay.classList.add('open');
+  overlay.onclick = (e)=>{ if(e.target===overlay) closeOverlay(); };
+  document.getElementById('closeBreakdownSheet').onclick = closeOverlay;
+}
+
 function openSyncModal(){
   const overlay = document.getElementById('overlay');
   overlay.innerHTML = `
