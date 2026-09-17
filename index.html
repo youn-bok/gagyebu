@@ -580,12 +580,12 @@ async function handleSave(existing, wasIncome){
   if(kind==='income'){
     const source = document.getElementById('fSource').value.trim();
     if(!source){ showToast('수입원을 입력해주세요.'); if(existing){ if(wasIncome) state.income.push(existing); else state.expenses.push(existing);} return; }
-    state.income.push({ id: existing?existing.id:uid(), date, source, amount, createdAt: existing?existing.createdAt:Date.now() });
+    state.income.push({ id: existing?existing.id:uid(), date, source, amount, createdAt: existing?existing.createdAt:Date.now(), updatedAt: Date.now() });
   } else {
     const category = document.getElementById('fCategory').value;
     const item = document.getElementById('fItem').value.trim();
     if(!item){ showToast('항목을 입력해주세요.'); if(existing){ if(wasIncome) state.income.push(existing); else state.expenses.push(existing);} return; }
-    state.expenses.push({ id: existing?existing.id:uid(), date, category, item, amount, createdAt: existing?existing.createdAt:Date.now() });
+    state.expenses.push({ id: existing?existing.id:uid(), date, category, item, amount, createdAt: existing?existing.createdAt:Date.now(), updatedAt: Date.now() });
   }
 
   await saveData();
@@ -804,23 +804,49 @@ async function handleImportFile(e){
       showToast('올바른 백업 파일이 아니에요.');
       return;
     }
-    const existingIncomeIds = new Set(state.income.map(t=>t.id));
-    const existingExpenseIds = new Set(state.expenses.map(t=>t.id));
-    let added = 0;
-    data.income.forEach(t=>{
-      if(t && t.id && !existingIncomeIds.has(t.id)){ state.income.push(t); existingIncomeIds.add(t.id); added++; }
-    });
-    data.expenses.forEach(t=>{
-      if(t && t.id && !existingExpenseIds.has(t.id)){ state.expenses.push(t); existingExpenseIds.add(t.id); added++; }
-    });
+    const result = mergeList(state.income, data.income);
+    state.income = result.list;
+    const result2 = mergeList(state.expenses, data.expenses);
+    state.expenses = result2.list;
+    const added = result.added + result2.added;
+    const updated = result.updated + result2.updated;
+
     await saveData();
     closeOverlay();
     render();
-    showToast(added>0 ? `${added}건을 새로 불러왔어요.` : '이미 다 동기화되어 있어요.');
+    const parts = [];
+    if(added>0) parts.push(`${added}건 추가`);
+    if(updated>0) parts.push(`${updated}건 수정 반영`);
+    showToast(parts.length>0 ? parts.join(', ')+'했어요.' : '이미 다 동기화되어 있어요.');
   }catch(err){
     showToast('백업 파일을 읽는 중 문제가 생겼어요.');
   }
   e.target.value = '';
+}
+
+// merges an incoming list into a local list: adds new records, and for records
+// that exist on both sides, keeps whichever version was edited more recently
+// (last-write-wins by updatedAt, falling back to createdAt for older records
+// saved before updatedAt existed).
+function mergeList(localList, incomingList){
+  const byId = new Map(localList.map(t=>[t.id, t]));
+  let added = 0, updated = 0;
+  incomingList.forEach(incoming=>{
+    if(!incoming || !incoming.id) return;
+    const local = byId.get(incoming.id);
+    if(!local){
+      byId.set(incoming.id, incoming);
+      added++;
+    } else {
+      const localTime = local.updatedAt || local.createdAt || 0;
+      const incomingTime = incoming.updatedAt || incoming.createdAt || 0;
+      if(incomingTime > localTime){
+        byId.set(incoming.id, incoming);
+        updated++;
+      }
+    }
+  });
+  return { list: Array.from(byId.values()), added, updated };
 }
 
 /* ---------- init ---------- */
