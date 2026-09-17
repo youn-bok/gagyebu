@@ -128,7 +128,8 @@ header{
 .cat-total-item .name{color:var(--ink-soft);}
 .cat-total-item .amt{color:var(--ink);font-weight:600;font-feature-settings:"tnum" 1;}
 
-.chips{display:flex;gap:8px;overflow-x:auto;padding:14px 18px 4px;scrollbar-width:none;}
+.chips{display:flex;gap:8px;overflow-x:auto;padding:14px 18px 4px;scrollbar-width:none;cursor:grab;}
+.chips.dragging{cursor:grabbing;user-select:none;}
 .chips::-webkit-scrollbar{display:none;}
 .chip{
   flex:0 0 auto;padding:7px 13px;border-radius:20px;border:1px solid var(--line);
@@ -413,6 +414,7 @@ function render(){
     b.onclick = ()=> openGroupBreakdown(b.dataset.group);
   });
   document.querySelectorAll('.chip').forEach(c=>{ c.onclick = ()=>{ ui.filterCat = c.dataset.cat; render(); }; });
+  enableHorizontalScroll(document.querySelector('.chips'));
   document.querySelectorAll('.row').forEach(r=>{
     r.onclick = ()=>{
       if(r.dataset.kind==='income'){
@@ -431,6 +433,33 @@ function changeMonth(delta){
   if(m<1){ m=12; y--; } if(m>12){ m=1; y++; }
   ui.month=m; ui.year=y;
   render();
+}
+function enableHorizontalScroll(el){
+  if(!el || el._dragBound) return;
+  el._dragBound = true;
+  let isDown=false, moved=false, startX=0, scrollLeft=0;
+  el.addEventListener('mousedown', (e)=>{
+    isDown=true; moved=false; el.classList.add('dragging');
+    startX = e.pageX; scrollLeft = el.scrollLeft;
+  });
+  const stop = ()=>{ isDown=false; el.classList.remove('dragging'); };
+  el.addEventListener('mouseleave', stop);
+  el.addEventListener('mouseup', stop);
+  el.addEventListener('mousemove', (e)=>{
+    if(!isDown) return;
+    const dx = e.pageX - startX;
+    if(Math.abs(dx) > 3) moved = true;
+    el.scrollLeft = scrollLeft - dx;
+  });
+  el.addEventListener('click', (e)=>{
+    if(moved){ e.preventDefault(); e.stopPropagation(); }
+  }, true);
+  el.addEventListener('wheel', (e)=>{
+    if(el.scrollWidth > el.clientWidth){
+      e.preventDefault();
+      el.scrollLeft += (e.deltaY !== 0 ? e.deltaY : e.deltaX);
+    }
+  }, { passive:false });
 }
 function downloadSvg(){
   return `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>`;
