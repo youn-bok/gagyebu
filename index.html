@@ -222,6 +222,15 @@ header{
   color:var(--credit-dark);font-size:14px;font-weight:700;cursor:pointer;font-family:'Noto Serif KR',serif;letter-spacing:1px;
 }
 .secondary-btn:active{background:var(--line-soft);}
+.danger-zone{margin-top:22px;padding-top:16px;border-top:1px dashed var(--line);}
+.danger-btn{
+  width:100%;padding:12px 0;border-radius:10px;border:1px solid var(--stamp);background:var(--paper);
+  color:var(--stamp-dark);font-size:13.5px;font-weight:600;cursor:pointer;
+}
+.danger-btn.solid{background:var(--stamp);color:#fff;font-weight:700;}
+.danger-btn:active{filter:brightness(0.92);}
+.danger-msg{font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin:0 0 12px;}
+.danger-msg b{color:var(--stamp);}
 .sync-desc{font-size:12.5px;color:var(--ink-soft);line-height:1.6;margin-bottom:16px;}
 
 .toast{
@@ -247,7 +256,7 @@ const CATEGORIES = [
   { name:'가족식비',   itemCol:'B', amtCol:'C' },
   { name:'외식',       itemCol:'D', amtCol:'E' },
   { name:'생활용품',   itemCol:'F', amtCol:'G' },
-  { name:'달이/별이',  itemCol:'H', amtCol:'I' },
+  { name:'산/달/별',   itemCol:'H', amtCol:'I' },
   { name:'패션/미용',  itemCol:'T', amtCol:'U' },
   { name:'건강',       itemCol:'R', amtCol:'S' },
   { name:'커피/용돈',  itemCol:'J', amtCol:'K' },
@@ -256,7 +265,7 @@ const CATEGORIES = [
   { name:'월세/공과금', itemCol:'P', amtCol:'Q' },
   { name:'기타',       itemCol:'V', amtCol:'W' },
 ];
-const FAMILY_SET = ['가족식비','외식','생활용품','달이/별이','건강','패션/미용','기타'];
+const FAMILY_SET = ['가족식비','외식','생활용품','산/달/별','건강','패션/미용','기타'];
 const PERSONAL_SET = ['커피/용돈','교통비','취미'];
 
 let state = null; // { income:[{id,date,source,amount,createdAt}], expenses:[{id,date,category,item,amount,createdAt}] }
@@ -770,6 +779,9 @@ function openSyncModal(){
         <button class="secondary-btn" id="importBackupBtn">백업 파일 불러오기</button>
       </div>
       <input type="file" id="importFileInput" accept="application/json" style="display:none">
+      <div class="danger-zone" id="dangerZone">
+        <button class="danger-btn" id="resetBtn">전체 데이터 삭제</button>
+      </div>
     </div>
   `;
   overlay.classList.add('open');
@@ -778,6 +790,29 @@ function openSyncModal(){
   document.getElementById('exportBackupBtn').onclick = exportBackup;
   document.getElementById('importBackupBtn').onclick = ()=>document.getElementById('importFileInput').click();
   document.getElementById('importFileInput').onchange = handleImportFile;
+  document.getElementById('resetBtn').onclick = showResetConfirm;
+}
+
+function showResetConfirm(){
+  const zone = document.getElementById('dangerZone');
+  const count = state.income.length + state.expenses.length;
+  zone.innerHTML = `
+    <p class="danger-msg">이 기기의 기록 <b>${count}건</b>이 모두 삭제돼요.<br>되돌릴 수 없으니, 필요하면 먼저 위에서 백업 파일을 저장해주세요.</p>
+    <div class="btn-row">
+      <button class="delete-btn" id="resetCancel" style="flex:1">취소</button>
+      <button class="danger-btn solid" id="resetConfirm" style="flex:1">정말 삭제</button>
+    </div>
+  `;
+  document.getElementById('resetCancel').onclick = openSyncModal;
+  document.getElementById('resetConfirm').onclick = async ()=>{
+    state.income = [];
+    state.expenses = [];
+    await saveData();
+    closeOverlay();
+    ui.filterCat = 'all';
+    render();
+    showToast('전체 데이터를 삭제했어요.');
+  };
 }
 
 function exportBackup(){
@@ -856,6 +891,7 @@ function mergeList(localList, incomingList){
   let migrated = false;
   state.expenses.forEach(e=>{
     if(e.category==='피복/의복'){ e.category='패션/미용'; migrated = true; }
+    if(e.category==='달이/별이'){ e.category='산/달/별'; migrated = true; }
   });
   if(migrated) await saveData();
   const now = new Date();
